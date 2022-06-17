@@ -1,0 +1,1164 @@
+---
+title: "RBCP: Participação eleitoral no Brasil"
+author: "Speck & Peixoto"
+date: "04/05/2022"
+output:
+ html_document:
+   code_folding: hide
+   includes:
+   theme: yeti
+   highlight: tango
+   toc: true
+   toc_depth: 3
+   toc_float:
+      collapsed: false
+      smooth_scroll: false
+      number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Pacotes utilizados #
+
+library(tidyverse)
+library(sjPlot)
+library(performance)
+library(lme4)
+library(ggthemes)
+library(viridis)
+library(patchwork)
+library(kableExtra)
+library(modelsummary) 
+
+# Bancos de dados utilizados #
+
+load("ABS_98_20.Rda")
+load("ABS_wide_comparecimento.Rda")
+abs_ibge <- read.csv("banco_mae_abs_ibge.csv", encoding = "UTF-8")
+load("base_participacao_2010_2012.Rda")
+
+
+
+
+# Renomear variáveis para serem utilizadas no modelos #
+
+ABS_98_20 <- ABS_98_20 %>%  
+ mutate(descricao = if_else(DS_ELEICAO %in% c("ELEICOES 1998", "ELEICOES 2000", "ELEICOES 2002","ELEICOES 2004",
+                                               "ELEICOES 2006", "ELEIÇÕES 2008", "ELEIÇÕES 2010",
+                                               "ELEIÇÃO MUNICIPAL 2012", "ELEIÇÕES GERAIS 2014", "ELEIÇÕES MUNICIPAIS 2016", 
+                                               "ELEIÇÕES GERAIS ESTADUAIS 2018","ELEIÇÃO GERAL FEDERAL 2018", "ELEIÇÕES MUNICIPAIS 2020",
+                                               "ELEIÇÕES MUNICIPAIS 2020 - AP"), "Ordinaria", "Suplementar"))
+
+
+
+base_participacao_artigo <- base_participacao_2010_2012 %>% 
+  rename( Educacao = T_MED18M,
+          Percentual_mulheres =  perc_mulheres,
+          Percentual_idosos = pessoas_65oumais,
+          Percentual_sem_religiao = perc_sem_religiao,
+          Eleitores = aptos_2010,
+          Densidade_demografica = den,
+          Percentual_pop_rural =  perc_rural,
+          Percentual_emprego = perc_pop_carteira_2010,
+          PIB_per_capita = pib_per_capita_2012,
+          Fracionalizacao_PIB = pib_frac_12, 
+          Fracionalizacao_religiosa = frac_religiao,
+          Maquina_publica = perc_funcionarios_discricionarios,
+          Dependencia_financeira_municipal = PP_TRANS_2012)  %>% 
+  filter(PIB_per_capita >=0)
+
+
+
+# Seleciona variáveis para serem utilizados nas análises #
+
+banco_artigo <- base_participacao_artigo %>% 
+  select( Educacao , Percentual_mulheres ,  Percentual_idosos , Percentual_sem_religiao , Eleitores ,            Densidade_demografica ,     Percentual_pop_rural ,            distancia_capital ,  metropolitana ,  GINI ,
+            Percentual_emprego , PIB_per_capita  , Fracionalizacao_PIB ,      Fracionalizacao_religiosa ,            Maquina_publica ,
+            Dependencia_financeira_municipal  ) %>% 
+  mutate(Log_Eleitores = log(Eleitores)) %>% 
+  select(-Eleitores)
+
+
+# Tema para construir gráficos #
+
+tema <- theme_fivethirtyeight() +
+  theme(title = element_text(size = 10),
+        plot.title = element_text(size = 30, margin = margin(0, 0, 30, 0)),
+       axis.title.x = element_text(size = 14),
+       axis.text.x =  element_text(size = 28),
+       axis.text.y =  element_text(size = 28),
+       legend.position = "bottom",
+       legend.text = element_text(size = 24),
+    plot.caption = element_text(hjust = 0, size = 18),
+    panel.background = element_rect(fill = "white", colour = "white", color = "white"),
+    plot.background = element_rect(fill = "white", colour = "white", color = "white"),
+    legend.background = element_rect(fill = "white"),
+    panel.grid.major.x = element_line(colour = "#eceff2", size = 0.8),
+    panel.grid.major.y = element_line(colour = "#eceff2", size = 0.8),
+    legend.box = "horizontal",
+    legend.key = element_rect(fill = "white", color = "white"),
+    strip.background = element_rect(fill = "white", colour = "white"),
+    legend.spacing.x = unit(1.0, "cm"),
+    legend.key.width = unit(2, "cm"),
+    strip.text = element_text(size = 20, colour = "black")
+    
+  )
+
+
+tema2 <- theme_fivethirtyeight() +
+  theme(legend.position = "bottom",
+       legend.text = element_text(size = 24),
+    panel.background = element_rect(fill = "white", colour = "white", color = "white"),
+    plot.background = element_rect(fill = "white", colour = "white", color = "white"),
+    legend.background = element_rect(fill = "white"),
+    panel.grid.major.x = element_line(colour = "#eceff2", size = 0.8),
+    panel.grid.major.y = element_line(colour = "#eceff2", size = 0.8),
+    legend.box = "horizontal",
+    legend.key = element_rect(fill = "white", color = "white"),
+    strip.background = element_rect(fill = "white", colour = "white"),
+    legend.spacing.x = unit(1.0, "cm"),
+    legend.key.width = unit(2, "cm"),
+    strip.text = element_text(size = 20, colour = "black")
+    
+  )
+
+ggplot2:: theme_set(tema) 
+
+```
+
+
+## Evolucão do comparecimento  (1998-2020)
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height= 15}
+
+comparecimento <- ABS_98_20 %>% 
+  filter(NR_TURNO == 1,
+         CD_CARGO %in% c(1,  11),
+         descricao == "Ordinaria") %>% 
+  group_by(cargo, ciclo) %>% 
+summarise(comparecimento = sum(comparecimento, na.rm = T)/ sum(aptos, na.rm = T)*100) %>% 
+  mutate(cargo = ifelse(cargo == "PREFEITO", "Municipais", "Nacionais"))
+  
+
+  comparecimento %>% 
+    ggplot(aes(x = as_factor(ciclo),
+               y = comparecimento, group = cargo,
+               col = cargo))+
+        geom_line(stat = "identity", size = 3.8, alpha = 0.8)+
+    scale_color_manual(values = c("steelblue","tomato4", "grey60",  "#B40431",
+                                  "#0B610B", "goldenrod", "black"))+
+    labs(col = "", fill = "", group = "", x = "")+
+    scale_y_continuous(labels=function(x) paste0(x,"%"), limits = c(70, 90))
+  
+```
+ps: A mobilizacao para eleicoes nacionais foram menores em todo o período, exceto para o ciclo de 2018-2020 em que as eleicoes municipais aconteceram em meio a pandemia e atingiu o menor patamar desde de 2000. Em 2020, menos de 77% do total de eleitores aptos compareceram às urnas para eleger prefeitos e vereadores.
+
+
+```{r}
+comparecimento %>% 
+  kbl() %>% 
+  kable_paper()
+
+```
+
+
+
+
+## Evolucão dos votos válidos por cargos (1998-2020)
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height= 15}
+
+votos_validos <- ABS_98_20 %>% 
+  filter(NR_TURNO == 1,
+         CD_CARGO %in% c(1, 3, 5, 6, 7, 11, 13),
+         descricao == "Ordinaria") %>% 
+  group_by(cargo, ciclo) %>% 
+summarise(p_votos_validos = (sum(legenda, na.rm = T) + sum(nominais, na.rm = T))/ sum(aptos, na.rm = T)) %>% 
+  mutate(Poder = if_else(cargo %in% c("PRESIDENTE", "GOVERNADOR", "PREFEITO"), "Executivo", "Legislativo"),
+         p_votos_validos_2 = if_else(cargo == "SENADOR" & ciclo %in% c("2002-2004", "2010-2012", "2018-2020"), p_votos_validos/2*100, p_votos_validos*100))
+  
+
+  votos_validos %>% 
+    ggplot(aes(x = as_factor(ciclo),
+               y = p_votos_validos_2, group = cargo,
+               col = cargo, linetype = Poder))+
+        geom_line(stat = "identity", size = 3.8, alpha = 0.6)+
+    scale_color_manual(values = c("steelblue","#0B610B", "steelblue",  "#B40431",
+                                "#0B610B", "goldenrod", "#B40431"))+
+    labs(col = "", fill = "", group = "", x= "", linetype = "")+
+    scale_y_continuous(labels=function(x) paste0(x,"%"))
+  
+```
+
+
+### Opcão com facet wrap para poder legislativo e executivo 
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height= 15}
+
+votos_validos <- ABS_98_20 %>% 
+  filter(NR_TURNO == 1,
+         CD_CARGO %in% c(1, 3, 5, 6, 7, 11, 13),
+         descricao == "Ordinaria") %>% 
+  group_by(cargo, ciclo) %>% 
+summarise(p_votos_validos = (sum(legenda, na.rm = T) + sum(nominais, na.rm = T))/ sum(aptos, na.rm = T)) %>% 
+  mutate(Poder = if_else(cargo %in% c("PRESIDENTE", "GOVERNADOR", "PREFEITO"), "Executivo", "Legislativo"),
+         p_votos_validos_2 = if_else(cargo == "SENADOR" & ciclo %in% c("2002-2004", "2010-2012", "2018-2020"), p_votos_validos/2*100, p_votos_validos*100))
+  
+
+  votos_validos %>% 
+    ggplot(aes(x = as_factor(ciclo),
+               y = p_votos_validos_2, group = cargo,
+               col = cargo))+
+        geom_line(stat = "identity", size = 3.8)+
+    scale_color_manual(values = c("steelblue","#0B610B", "steelblue",  "#B40431",
+                                "#0B610B", "goldenrod", "#B40431"))+
+    labs(col = "", fill = "", group = "", x= "")+
+    facet_wrap(~Poder)
+  
+```
+
+
+
+## Análise longitudinal do comparecimento nas eleições gerais em municipais entre 2000 e 2020.
+
+
+As variáveis foram construídas com base no percentual do comparecimento sobre o total de eleitores aptos por município entre 1998 e 2020.
+
+
+
+```{r, eval=FALSE, echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height= 15}
+
+ABS_98_20 %>% 
+  filter(NR_TURNO == 1, CD_CARGO %in% c(1, 11) ,ANO_ELEICAO %in% c(1998, 2000, 2002, 2004, 2006, 2008, 2010, 2012, 2014, 2016, 2018, 2020),
+         descricao == "Regular") %>% 
+  ggplot(aes( y = p_comp, x = as_factor(ANO_ELEICAO)))+
+  geom_jitter(alpha = 0.3, color = "grey40")+
+  geom_boxplot(alpha = 0.3, color = "#014d64", fill = "#6794a7", size = 1.2)+
+  xlab("")+
+
+          labs(title = "Comparecimento nas eleições brasileiras 1998-2020" ,
+               col = "",
+               fill = "")+
+  ylim(40,100)
+
+```
+
+
+
+
+# Gráfico 3: Votos válidos sobre aptos por cargo, desagregados para o âmbito municipal (1998 a 2020)
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height= 15}
+
+ABS_98_20 %>% 
+  filter(NR_TURNO == 1,
+        CD_CARGO %in% c(1, 3, 5, 6,7, 11, 13) , 
+         ANO_ELEICAO %in% c(1998, 2000,2002, 2004, 
+                            2006, 2008, 2010, 
+                            2012, 2014, 2016,
+                            2018, 2020)) %>% 
+   mutate(cargo_2 =  case_when(cargo == "DEPUTADO FEDERAL" ~ "Dep. Federal",
+                               cargo == "DEPUTADO ESTADUAL" ~ "Dep. Estadual",
+                               cargo == "PRESIDENTE" ~ "Presidente",
+                               cargo == "SENADOR" ~ "Senador",
+                               cargo == "VEREADOR" ~ "Ver.",
+                               cargo == "PREFEITO" ~ "Pref.",
+                               cargo == "GOVERNADOR" ~ "Gov.")) %>% 
+  
+   ggplot()+
+  aes(y = p_validos_aptos, x = fct_reorder(cargo_2, CD_CARGO))+
+  geom_jitter(alpha = 0.2, color = "grey40", size = 0.1)+
+  geom_boxplot( alpha = 0.3, fill = "#6794a7", 
+                color = "#014d64", size = 0.6)+
+  theme_fivethirtyeight()+
+  theme(panel.background = element_rect(fill = "white", colour = "white", color = "white"),
+        plot.background = element_rect(fill = "white", colour = "white", color = "white"),
+        strip.background=element_rect(fill="white", colour="white"),
+        title = element_text(size = 16),
+        axis.text.x =  element_text(size = 22),
+        axis.text.y =  element_text(size = 17),
+        strip.text = element_text(size = 24, colour = "black", face = "bold"),
+        panel.grid.major.x = element_line(colour = "grey90", size = 0.8),
+        panel.grid.major.y = element_line(colour = "grey90", size = 1.2))+
+  xlab("")+
+  
+  labs(col = "",
+       fill = "")+
+  ylim(30,100)+
+  facet_wrap(~ciclo)+
+  scale_x_discrete(labels=function(x){sub("\\s", "\n", x)})+
+  scale_y_continuous(labels=function(x) paste0(x,"%"))
+
+
+```
+
+
+
+Nota: Eleições municipais claramente mobilizam mais do que as eleições nacionais, mesmo em 2020 em plena pandemia o comparecimento superou a eleição nacional anterior ocorrida em 2016.  
+
+
+
+# Variáveis dependentes
+
+A construção das variáveis dependentes para serem utilizadas nos modelos lineares multivariados levou em consideração os votos válidos (nominais e em partidos) sobre o total de eleitores aptos por município.  
+
+A operacionalização da mobilização eleitoral por meio do percentual de votos válidos do total de eleitores aptos permite observar as variações dentro de uma mesma eleição entre cargos diferentes. 
+  Dessa forma, são considerados 5 cargos nas eleições nacionais em 2010 e 2 nas eleições municipais em 2012.
+
+
+## Percentual de votos válidos sobre aptos:
+
+  
+#### Eleições Gerais de 2010 
+
+- Presidente (p_validos_aptos_1_2010_1)
+
+- Governador (p_validos_aptos_1_2010_3)
+
+- Senador (p_validos_aptos_1_2010_5)
+
+- Deputado Federal (p_validos_aptos_1_2010_6)
+
+- Deputado Estadual  (p_validos_aptos_1_2010_7)
+
+  
+#### Eleições municipais de 2012 
+
+- Prefeitos em 2012 (p_validos_aptos_1_2012_11)
+
+- Vereador em 2012 (p_validos_aptos_1_2012_13)
+
+
+
+# Variação por municípios de votos válidos sobre aptos para os cargos em 2010 e 2012
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=18, fig.height= 12}
+
+
+
+ABS_98_20 %>% 
+  filter(NR_TURNO == 1, ANO_ELEICAO %in% c( 2010, 2012)) %>% 
+  ggplot()+
+  aes(y = p_validos_aptos, x = fct_reorder(DS_CARGO, CD_CARGO))+
+  geom_jitter(alpha = 0.3, color = "grey40")+
+  geom_boxplot( alpha = 0.3, fill = "#6794a7", color = "#014d64", size = 1.2)+
+    theme_fivethirtyeight()+
+  theme(panel.background = element_rect(fill = "white", colour = "white", color = "white"),
+        plot.background = element_rect(fill = "white", colour = "white", color = "white"),
+        strip.background=element_rect(fill="white", colour="white"),
+                    title = element_text(size = 24),
+                    axis.title.x = element_text(size = 16),
+                    axis.text.x =  element_text(size = 12),
+                    axis.text.y =  element_text(size = 12),
+        panel.grid.major.x = element_line(colour = "grey90", size = 1.2),
+        panel.grid.major.y = element_line(colour = "grey90", size = 2.0))+
+  xlab("")+
+
+          labs(title = "Votos válidos sobre aptos nas eleições brasileiras 2010-2012" ,
+               col = "",
+               fill = "")+
+  ylim(40,100)
+
+
+```
+
+## Tabela de tendencia central das variáveis dependentes:
+
+```{r, echo= FALSE}
+ABS_98_20 %>% 
+  filter(NR_TURNO == 1, ANO_ELEICAO %in% c( 2010, 2012)) %>%
+  group_by(DS_CARGO) %>% 
+  summarise(Media = mean(p_validos_aptos),
+            Mediana = median(p_validos_aptos),
+            `Desvio-padrão` = sd(p_validos_aptos),
+            Mínimo = min(p_validos_aptos),
+            Máximo = max(p_validos_aptos)) %>%
+  mutate_if(is.numeric, format, digits=3) %>% 
+  kbl() %>%
+  kable_minimal(full_width = F)
+```
+
+
+# Curvas de densidade das variáveis dependentes
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=25, fig.height= 15}
+
+ABS_98_20 %>% 
+  filter(NR_TURNO == 1, ANO_ELEICAO %in% c( 2010, 2012)) %>% 
+  ggplot()+
+  aes(x = p_validos_aptos, col = DS_CARGO)+
+  geom_density( alpha = 0.3,   size = 1.2)+
+    theme_fivethirtyeight()+
+  theme(panel.background = element_rect(fill = "white", colour = "white", color = "white"),
+        plot.background = element_rect(fill = "white", colour = "white", color = "white"),
+        strip.background=element_rect(fill="white", colour="white"),
+        legend.background = element_rect(fill = "white", colour = "white", color = "white"),
+       legend.key = element_rect(fill = "white", color = "white"),
+
+                    title = element_text(size = 32),
+                    axis.title.x = element_text(size = 20),
+                    axis.text.x =  element_text(size = 20),
+                    axis.text.y =  element_text(size = 20),
+        panel.grid.major.x = element_line(colour = "grey90", size = 1.2),
+        panel.grid.major.y = element_line(colour = "grey90", size = 2.0))+       labs(title = "Percentual de votos válidos sobre aptos por cargo nas eleições brasileiras 2010-2012" ,
+               col = "",
+               fill = "",
+              x= "")+
+  theme(legend.position = "bottom",
+         title = element_text(size = 32),
+                    axis.title.x = element_text(size = 20),
+                    axis.text.x =  element_text(size = 20),
+                    axis.text.y =  element_text(size = 20))+
+  xlim(40,100)+
+  guides(col= guide_legend(nrow = 1))
+
+
+
+```
+  
+  
+
+# Modelos hierárquicos (multiníveis) com interceptos aleatórios (Random Intercept Model)
+
+
+O principal incremento análitico destes modelos é permitir inserir na variação dos resíduos os efeitos para cada UF. O fato dos distritos eleitorais dos cargos de Governador, Senador, Deputado Federal e Estadual serem o estado faz com que elementos das disputas necessitem ser incluídos nos modelos. Desta forma, foram inseridos as UF's como efeitos aleatórios para controlar a heterocedasticidade correlacionadas aos distritos eleitorais estaduais.. 
+ 
+
+Observar que o R2 do modelo para prefeitos em 2012 é bem menor do que para os modelos dos demais cargos. Investigar a possibilidade do problema de vies seleção de casos pela anulaçao de votos de determinados candidatos.  
+
+  
+  
+  
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+
+###### Modelos multiniveis ####
+
+
+modelo_presidente_llm <- lmer(p_validos_aptos_1_2010_1 ~
+   
+     # Individuais 
+    Educacao +
+    Percentual_mulheres + 
+    Percentual_idosos +
+    Percentual_sem_religiao + 
+      
+    # Demográficas 
+    log(Eleitores) +
+    Densidade_demografica +
+    Percentual_pop_rural +
+    distancia_capital +
+    metropolitana +
+      
+    # Socioeconomicas
+    GINI +
+    Percentual_emprego +
+    PIB_per_capita  +
+    Fracionalizacao_PIB +
+    Fracionalizacao_religiosa +
+    
+    # Administracao pública  
+    Maquina_publica +
+    Dependencia_financeira_municipal +
+    
+    
+    (1| uf)  ,
+              data = base_participacao_artigo)
+
+modelo_governador_llm <- lmer(p_validos_aptos_1_2010_3 ~
+   # Individuais 
+    Educacao +
+    Percentual_mulheres + 
+    Percentual_idosos +
+    Percentual_sem_religiao + 
+      
+    # Demográficas 
+    log(Eleitores) +
+    Densidade_demografica +
+    Percentual_pop_rural +
+    distancia_capital +
+    metropolitana +
+      
+    # Socioeconomicas
+    GINI +
+    Percentual_emprego +
+    PIB_per_capita  +
+    Fracionalizacao_PIB +
+    Fracionalizacao_religiosa +
+    
+    # Administracao pública  
+    Maquina_publica +
+    Dependencia_financeira_municipal +
+    
+    
+    (1| uf)  ,
+              data = base_participacao_artigo)
+
+
+modelo_senador_llm <- lmer(p_validos_aptos_1_2010_5 ~
+    # Individuais 
+    Educacao +
+    Percentual_mulheres + 
+    Percentual_idosos +
+    Percentual_sem_religiao + 
+      
+    # Demográficas 
+    log(Eleitores) +
+    Densidade_demografica +
+    Percentual_pop_rural +
+    distancia_capital +
+    metropolitana +
+      
+    # Socioeconomicas
+    GINI +
+    Percentual_emprego +
+    PIB_per_capita  +
+    Fracionalizacao_PIB +
+    Fracionalizacao_religiosa +
+    
+    # Administracao pública  
+    Maquina_publica +
+    Dependencia_financeira_municipal +
+    
+    
+    (1| uf)  ,
+              data = base_participacao_artigo)
+
+modelo_deputado_federal_llm <- lmer(p_validos_aptos_1_2010_6 ~
+  # Individuais 
+    Educacao +
+    Percentual_mulheres + 
+    Percentual_idosos +
+    Percentual_sem_religiao + 
+      
+    # Demográficas 
+    log(Eleitores) +
+    Densidade_demografica +
+    Percentual_pop_rural +
+    distancia_capital +
+    metropolitana +
+      
+    # Socioeconomicas
+    GINI +
+    Percentual_emprego +
+    PIB_per_capita  +
+    Fracionalizacao_PIB +
+    Fracionalizacao_religiosa +
+    
+    # Administracao pública  
+    Maquina_publica +
+    Dependencia_financeira_municipal +
+    
+    
+    (1| uf)  ,
+              data = base_participacao_artigo)
+
+modelo_deputado_estadual_llm <- lmer(p_validos_aptos_1_2010_7 ~
+    # Individuais 
+    Educacao +
+    Percentual_mulheres + 
+    Percentual_idosos +
+    Percentual_sem_religiao + 
+      
+    # Demográficas 
+    log(Eleitores) +
+    Densidade_demografica +
+    Percentual_pop_rural +
+    distancia_capital +
+    metropolitana +
+      
+    # Socioeconomicas
+    GINI +
+    Percentual_emprego +
+    PIB_per_capita  +
+    Fracionalizacao_PIB +
+    Fracionalizacao_religiosa +
+    
+    # Administracao pública  
+    Maquina_publica +
+    Dependencia_financeira_municipal +
+    
+    
+    (1| uf)  ,
+              data = base_participacao_artigo)
+
+modelo_prefeito_llm <- lmer(p_validos_aptos_1_2012_11 ~
+   # Individuais 
+    Educacao +
+    Percentual_mulheres + 
+    Percentual_idosos +
+    Percentual_sem_religiao + 
+      
+    # Demográficas 
+    log(Eleitores) +
+    Densidade_demografica +
+    Percentual_pop_rural +
+    distancia_capital +
+    metropolitana +
+      
+    # Socioeconomicas
+    GINI +
+    Percentual_emprego +
+    PIB_per_capita  +
+    Fracionalizacao_PIB +
+    Fracionalizacao_religiosa +
+    
+    # Administracao pública  
+    Maquina_publica +
+    Dependencia_financeira_municipal +
+    
+    
+    (1| uf)  ,
+              data = base_participacao_artigo)
+
+modelo_vereador_llm <- lmer(p_validos_aptos_1_2012_13 ~
+    # Individuais 
+    Educacao +
+    Percentual_mulheres + 
+    Percentual_idosos +
+    Percentual_sem_religiao + 
+      
+    # Demográficas 
+    log(Eleitores) +
+    Densidade_demografica +
+    Percentual_pop_rural +
+    distancia_capital +
+    metropolitana +
+      
+    # Socioeconomicas
+    GINI +
+    Percentual_emprego +
+    PIB_per_capita  +
+    Fracionalizacao_PIB +
+    Fracionalizacao_religiosa +
+    
+    # Administracao pública  
+    Maquina_publica +
+    Dependencia_financeira_municipal +
+    
+    
+    (1| uf)  ,
+              data = base_participacao_artigo)
+
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+
+tab_model(modelo_presidente_llm ,modelo_governador_llm,
+          modelo_senador_llm, modelo_deputado_federal_llm,
+          modelo_deputado_estadual_llm, modelo_prefeito_llm,
+          modelo_vereador_llm, show.ci = FALSE, show.std = TRUE,
+          p.style = c( "numeric_stars"),
+dv.labels = c("Presidente", "Governador", "Senador", "Dep. Federal", "Dep. Estadual", "Prefeito", "Vereador")
+)
+```
+
+
+
+
+
+### Gráfico dos efeitos fixos estimados dos modelos multiníveis 
+
+```{r, echo = FALSE, warning=FALSE, fig.height=18, fig.width=15}
+
+
+plot_models(modelo_presidente_llm, modelo_governador_llm,
+            modelo_senador_llm, modelo_deputado_federal_llm,
+            modelo_deputado_estadual_llm,modelo_prefeito_llm,
+            modelo_vereador_llm,
+            line.size = 2, 
+            vline.color = "grey15") +
+  
+  theme_fivethirtyeight()+
+  theme(panel.background = element_rect(fill = "white", colour = "white", color = "white"),
+        plot.background = element_rect(fill = "white", colour = "white", color = "white"),
+        strip.background=element_rect(fill="white", colour="white"),
+        legend.background = element_rect(fill = "white", colour = "white", color = "white"),
+       legend.key = element_rect(fill = "white", color = "white"),
+                    title = element_text(size = 24),
+                    axis.title.x = element_text(size = 16),
+                    axis.text.x =  element_text(size = 12),
+                    axis.text.y =  element_text(size = 16),
+        panel.grid.major.x = element_line(colour = "grey90", size = 1.2),
+        panel.grid.major.y = element_line(colour = "grey90", size = 2.0))
+
+  
+
+```
+
+
+### Gráficos dos efeitos aleatórios dos modelos multiníveis 
+
+```{r eval=FALSE, fig.height=18, fig.width=15, message=FALSE, warning=FALSE, include=FALSE}
+
+
+plot_model(modelo_presidente_llm, type = "pred",
+             line.size = 2, 
+            vline.color = "grey15") +
+  
+  theme_fivethirtyeight()+
+  theme(panel.background = element_rect(fill = "white", colour = "white", color = "white"),
+        plot.background = element_rect(fill = "white", colour = "white", color = "white"),
+        strip.background=element_rect(fill="white", colour="white"),
+        legend.background = element_rect(fill = "white", colour = "white", color = "white"),
+       legend.key = element_rect(fill = "white", color = "white"),
+                    title = element_text(size = 24),
+                    axis.title.x = element_text(size = 16),
+                    axis.text.x =  element_text(size = 12),
+                    axis.text.y =  element_text(size = 16),
+        panel.grid.major.x = element_line(colour = "grey90", size = 1.2),
+        panel.grid.major.y = element_line(colour = "grey90", size = 2.0))+
+  labs(fill = "", col = "")
+
+```
+
+
+
+### Gráfico dos efeitos fixos padronizados dos modelos multiníveis 
+
+```{r, echo = FALSE, warning=FALSE, fig.height=18, fig.width=15}
+
+
+plot_models(modelo_presidente_llm, modelo_governador_llm,
+            modelo_senador_llm, modelo_deputado_federal_llm,
+            modelo_deputado_estadual_llm,modelo_prefeito_llm,
+            modelo_vereador_llm,
+            line.size = 2, 
+            vline.color = "grey15", std.est = "std") +
+  
+  theme_fivethirtyeight()+
+  theme(panel.background = element_rect(fill = "white", colour = "white", color = "white"),
+        plot.background = element_rect(fill = "white", colour = "white", color = "white"),
+        strip.background=element_rect(fill="white", colour="white"),
+        legend.background = element_rect(fill = "white", colour = "white", color = "white"),
+       legend.key = element_rect(fill = "white", color = "white"),
+                    title = element_text(size = 24),
+                    axis.title.x = element_text(size = 16),
+                    axis.text.x =  element_text(size = 12),
+                    axis.text.y =  element_text(size = 16),
+        panel.grid.major.x = element_line(colour = "grey90", size = 1.2),
+        panel.grid.major.y = element_line(colour = "grey90", size = 2.0))+
+  ylim(-1.5, 0.5)
+
+  
+
+```
+
+### Efeitos marginais: Educacão região metropolitana
+
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE, fig.height=14, fig.width=20}
+
+ggplot2:: theme_set(tema2) 
+pres <- plot_model(modelo_presidente_llm, type = "pred", terms= c("Educacao", "metropolitana" ))+ ylim(60, 90)
+
+gov <- plot_model(modelo_governador_llm, type = "pred", terms= c("Educacao", "metropolitana" ))+ ylim(60, 90)
+
+sen <- plot_model(modelo_senador_llm, type = "pred", terms= c("Educacao", "metropolitana" ))+ ylim(60, 90)
+
+fed <- plot_model(modelo_deputado_federal_llm, type = "pred", terms= c("Educacao", "metropolitana" ))+ ylim(60, 90)
+
+est <- plot_model(modelo_deputado_estadual_llm, type = "pred", terms= c("Educacao", "metropolitana" ))+ ylim(60, 90)
+
+pref <- plot_model(modelo_prefeito_llm, type = "pred", terms= c("Educacao", "metropolitana" ))+ ylim(60, 90)
+
+ver <- plot_model(modelo_vereador_llm, type = "pred", terms= c("Educacao", "metropolitana" ))+ ylim(60, 90)
+
+
+
+(pres + gov + sen)/
+  (fed + est + ver)/
+  pref
+
+```
+
+### Efeitos marginais: Tamanho do eleitorado por região metropolitana
+
+```{r , echo = FALSE, warning=FALSE, fig.height=20, fig.width=14} 
+
+
+pres1 <- plot_model(modelo_presidente_llm, type = "pred", terms= c("Eleitores", "metropolitana" ))+ ylim(50, 90)
+
+gov1 <- plot_model(modelo_governador_llm, type = "pred", terms= c("Eleitores", "metropolitana" ))+ ylim(50, 75)
+
+sen1 <- plot_model(modelo_senador_llm, type = "pred", terms= c("Eleitores", "metropolitana" ))+ ylim(50, 75)
+
+fed1 <- plot_model(modelo_deputado_federal_llm, type = "pred", terms= c("Eleitores", "metropolitana" ))+ ylim(50, 75)
+
+est1 <- plot_model(modelo_deputado_estadual_llm, type = "pred", terms= c("Eleitores", "metropolitana" ))+ ylim(50, 75)
+
+pref1 <- plot_model(modelo_prefeito_llm, type = "pred", terms= c("Eleitores", "metropolitana" ))+ ylim(50, 75)
+
+ver1 <- plot_model(modelo_vereador_llm, type = "pred", terms= c("Eleitores", "metropolitana" ))+ ylim(50, 75)
+
+
+
+(pres1 + gov1 + sen1)/
+  (fed1 + est1 + ver1)/
+  pref1
+
+```
+
+
+### Testes de colinearidade nos modelos hierárquicos
+
+```{r, echo=FALSE, warning=FALSE, fig.height=18, fig.width=15}
+
+check_model(modelo_presidente_llm)
+
+check_collinearity(modelo_presidente_llm)
+
+```
+
+
+
+
+####
+
+Eleições locais com maior participacao do que as nacionais. 
+
+
+Ressaltar o tamanho 
+Importancia da Educacao
+Importancia da unidade do Estado maior do que da Regiao
+
+Estabilidade dos estimadores - variaveis tem impactos homogeneos e consistentes em todas as variaveis dependentes para diferentes cargos em disputa. 
+
+
+$$
+\operatorname{p\_validos\_aptos\_1\_2010\_1} = \alpha + \beta_{1}(\operatorname{Educacao}) + \beta_{2}(\operatorname{Percentual\_mulheres}) + \beta_{3}(\operatorname{Percentual\_idosos}) + \beta_{4}(\operatorname{Percentual\_sem\_religiao}) + \beta_{5}(\operatorname{log(Eleitores)}) + \beta_{6}(\operatorname{Densidade\_demografica}) + \beta_{7}(\operatorname{Percentual\_pop\_rural}) + \beta_{8}(\operatorname{distancia\_capital}) + \beta_{9}(\operatorname{metropolitana}) + \beta_{10}(\operatorname{GINI}) + \beta_{11}(\operatorname{Percentual\_emprego}) + \beta_{12}(\operatorname{PIB\_per\_capita}) + \beta_{13}(\operatorname{Fracionalizacao\_PIB}) + \beta_{14}(\operatorname{Fracionalizacao\_religiosa}) + \beta_{15}(\operatorname{Maquina\_publica}) + \beta_{16}(\operatorname{Dependencia\_financeira\_municipal}) + \epsilon
+$$
+
+# teste do datasummary_skim
+
+```{r, echo=FALSE}
+
+ banco_artigo %>% 
+ datasummary_skim(output = "kableExtra", 
+  title = "Resumos das variáveis dos modelos") %>% 
+   column_spec(2, bold = T, border_right = T)
+  
+
+```
+
+# Resumos das variáveis independentes dos modelos
+
+```{r, echo=FALSE}
+
+#title = "Resumos das variáveis independentes dos modelos"
+
+tabela_bruno <- banco_artigo %>% 
+  na.omit()  %>% 
+  rename(`Educação (% pop. ensino médio)` = Educacao,
+          `Genero (% mulheres)` = Percentual_mulheres,
+          `Idade (% idosos)` = Percentual_idosos, 
+          `Religião (% pop. sem religião)` =  Percentual_sem_religiao,
+          `Tamanho (Log número de eleitores)` =    Log_Eleitores,
+          `Densidade (Densidade demográfica)` = Densidade_demografica,
+          `População rural (% pop. rural)` =   Percentual_pop_rural,
+          `Distância da capital` =      distancia_capital, 
+          `Região metropolitana` = metropolitana,
+          `Emprego privado (% empregados)` = Percentual_emprego,
+          `Renda (PIB per capita)` = PIB_per_capita, 
+          `Máquina pública (% func. pub. discricionários)` = Maquina_publica,
+          `Autonomia financeira (% de transferências governamentais)` = Dependencia_financeira_municipal,
+          `Heterogeneidade econômica (fracionalização do PIB)` = Fracionalizacao_PIB,
+           `Heterogeneidade cultural (fracionalização religiosa)` = Fracionalizacao_religiosa,
+          `Heterogeneidade social (GINI)` = GINI)
+    
+
+
+   datasummary(  `Educação (% pop. ensino médio)` +
+                 `Genero (% mulheres)` + 
+                 `Idade (% idosos)` +
+                 `Religião (% pop. sem religião)` +
+                 `Tamanho (Log número de eleitores)` +
+                 `Densidade (Densidade demográfica)` +
+                 `População rural (% pop. rural)` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado (% empregados)` +
+                 `Renda (PIB per capita)` +
+                 `Máquina pública (% func. pub. discricionários)`+
+                 `Autonomia financeira (% de transferências governamentais)` +
+                 `Heterogeneidade econômica (fracionalização do PIB)`+ 
+                 `Heterogeneidade cultural (fracionalização religiosa)`+
+                   
+                 `Heterogeneidade social (GINI)` ~ Mean + SD + Median + Min + Max + Histogram, 
+              
+              data = tabela_bruno,
+      output = "kableExtra") %>% 
+  column_spec(2, bold = T, border_right = T) %>% 
+   pack_rows(
+     index = c("Atributos individuais" = 4, "Ecológicas" = 9, "Heterogeneidade" = 3)
+   )
+
+
+
+```
+
+
+# Novos modelos multiníveis com variaveis renomeadas para inserir no artigo 
+
+
+
+```{r, echo = FALSE, warning=FALSE, fig.height=18, fig.width=15, message=FALSE}
+
+
+bancos_modelos_bruno <- base_participacao_artigo %>% 
+  rename(`Educação` = Educacao,
+          `Gênero` = Percentual_mulheres,
+          `Idade` = Percentual_idosos, 
+          `Religião (% sem religião)` =  Percentual_sem_religiao,
+          `Densidade` = Densidade_demografica,
+          `População rural` =   Percentual_pop_rural,
+          `Distância da capital` =      distancia_capital, 
+          `Região metropolitana` = metropolitana,
+          `Emprego privado` = Percentual_emprego,
+          `Renda` = PIB_per_capita, 
+          `Máquina pública` = Maquina_publica,
+          `Autonomia financeira` = Dependencia_financeira_municipal,
+          `Heterogeneidade econômica` = Fracionalizacao_PIB,
+           `Heterogeneidade cultural` = Fracionalizacao_religiosa,
+          `Heterogeneidade social` = GINI,
+        
+          `Presidente 2010` =  p_validos_aptos_1_2010_1,
+          `Governador 2010` =  p_validos_aptos_1_2010_3,
+          `Senador 2010` =     p_validos_aptos_1_2010_5,
+          `Dep Federal 2010` = p_validos_aptos_1_2010_6,
+          `Dep Estadual 2010` = p_validos_aptos_1_2010_7,
+          `Prefeito 2012` =    p_validos_aptos_1_2012_11,
+          `Vereador 2012` =    p_validos_aptos_1_2012_13)
+    
+
+
+
+modelo_presidente_llm_2 <- lmer(`Presidente 2010` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+modelo_governador_llm_2 <- lmer(`Governador 2010` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+
+
+
+modelo_senador_llm_2 <- lmer(`Senador 2010` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+
+
+modelo_dep_federal_llm_2 <- lmer(`Dep Federal 2010` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+
+modelo_dep_estadual_llm_2 <- lmer(`Dep Estadual 2010` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+modelo_prefeito_llm_2 <- lmer(`Prefeito 2012` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+modelo_vereador_llm_2 <- lmer(`Vereador 2012` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+
+
+
+plot_models(modelo_presidente_llm_2, modelo_governador_llm_2,
+            modelo_senador_llm_2, modelo_dep_federal_llm_2,
+            modelo_dep_estadual_llm_2, modelo_prefeito_llm_2,
+            modelo_vereador_llm_2,
+            line.size = 2, 
+            vline.color = "grey15", std.est = "std") +
+  
+  theme_fivethirtyeight()+
+  theme(panel.background = element_rect(fill = "white", colour = "white", color = "white"),
+        plot.background = element_rect(fill = "white", colour = "white", color = "white"),
+        strip.background=element_rect(fill="white", colour="white"),
+        legend.background = element_rect(fill = "white", colour = "white", color = "white"),
+       legend.key = element_rect(fill = "white", color = "white"),
+                    title = element_text(size = 24),
+                    axis.title.x = element_text(size = 16),
+                    axis.text.x =  element_text(size = 12),
+                    axis.text.y =  element_text(size = 16),
+                     legend.text = element_text(size = 16),
+        panel.grid.major.x = element_line(colour = "grey90", size = 1.2),
+        panel.grid.major.y = element_line(colour = "grey90", size = 2.0))+
+  ylim(-1.5, 0.5)+
+  labs(y = "Estimativas", fill = "Variáveis dependentes", col ="Variáveis dependentes")
+
+
+
+
+```
+
+### P-valor com correcão pelo método de Bonferroni para todos os modelos
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+
+tab_model(modelo_presidente_llm_2 ,modelo_governador_llm_2,
+          modelo_senador_llm_2, modelo_dep_federal_llm_2,
+          modelo_dep_estadual_llm_2, modelo_prefeito_llm_2,
+          modelo_vereador_llm_2, show.ci = FALSE, 
+dv.labels = c("Presidente", "Governador", "Senador", "Dep. Federal", "Dep. Estadual", "Prefeito", "Vereador"), p.adjust = "bonferroni")
+
+
+```
