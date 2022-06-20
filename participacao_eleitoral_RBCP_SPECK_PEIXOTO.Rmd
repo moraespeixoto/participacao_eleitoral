@@ -34,14 +34,8 @@ library(modelsummary)
 # Bancos de dados utilizados #
 
 load("ABS_98_20.Rda")
-load("ABS_wide_comparecimento.Rda")
-abs_ibge <- read.csv("banco_mae_abs_ibge.csv", encoding = "UTF-8")
-load("base_participacao_2010_2012.Rda")
 
 
-
-
-# Renomear variáveis para serem utilizadas no modelos #
 
 ABS_98_20 <- ABS_98_20 %>%  
  mutate(descricao = if_else(DS_ELEICAO %in% c("ELEICOES 1998", "ELEICOES 2000", "ELEICOES 2002","ELEICOES 2004",
@@ -50,26 +44,7 @@ ABS_98_20 <- ABS_98_20 %>%
                                                "ELEIÇÕES GERAIS ESTADUAIS 2018","ELEIÇÃO GERAL FEDERAL 2018", "ELEIÇÕES MUNICIPAIS 2020",
                                                "ELEIÇÕES MUNICIPAIS 2020 - AP"), "Ordinaria", "Suplementar"))
 
-
-
-base_participacao_artigo <- base_participacao_2010_2012 %>% 
-  rename( Educacao = T_MED18M,
-          Percentual_mulheres =  perc_mulheres,
-          Percentual_idosos = pessoas_65oumais,
-          Percentual_sem_religiao = perc_sem_religiao,
-          Eleitores = aptos_2010,
-          Densidade_demografica = den,
-          Percentual_pop_rural =  perc_rural,
-          Percentual_emprego = perc_pop_carteira_2010,
-          PIB_per_capita = pib_per_capita_2012,
-          Fracionalizacao_PIB = pib_frac_12, 
-          Fracionalizacao_religiosa = frac_religiao,
-          Maquina_publica = perc_funcionarios_discricionarios,
-          Dependencia_financeira_municipal = PP_TRANS_2012)  %>% 
-  filter(PIB_per_capita >=0)
-
-
-
+load("base_participacao_artigo.Rda")
 # Seleciona variáveis para serem utilizados nas análises #
 
 banco_artigo <- base_participacao_artigo %>% 
