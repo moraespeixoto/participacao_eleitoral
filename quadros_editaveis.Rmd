@@ -1,0 +1,333 @@
+---
+title: "Quadros editáveis"
+author: ""
+date: "2022-07-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, echo=FALSE}
+
+library(tidyverse)
+library(kableExtra)
+library(modelsummary)
+library(sjPlot)
+library(lme4)
+
+
+
+load("base_participacao_artigo.Rda")
+
+banco_artigo <- base_participacao_artigo %>% 
+  select( Educacao , Percentual_mulheres ,  Percentual_idosos , Percentual_sem_religiao , Eleitores ,            Densidade_demografica ,     Percentual_pop_rural ,            distancia_capital ,  metropolitana ,  GINI ,
+            Percentual_emprego , PIB_per_capita  , Fracionalizacao_PIB ,      Fracionalizacao_religiosa ,            Maquina_publica ,
+            Dependencia_financeira_municipal  ) %>% 
+  mutate(Log_Eleitores = log(Eleitores)) %>% 
+  select(-Eleitores)
+
+
+
+```
+
+
+
+# Quadro 5: Resumos das variáveis independentes dos modelos
+
+```{r, echo=FALSE}
+
+#title = "Resumos das variáveis independentes dos modelos"
+
+tabela_bruno <- banco_artigo %>% 
+  na.omit()  %>% 
+  rename(`Educação (% pop. ensino médio)` = Educacao,
+          `Genero (% mulheres)` = Percentual_mulheres,
+          `Idade (% idosos)` = Percentual_idosos, 
+          `Religião (% pop. sem religião)` =  Percentual_sem_religiao,
+          `Tamanho (Log número de eleitores)` =    Log_Eleitores,
+          `Densidade (Densidade demográfica)` = Densidade_demografica,
+          `População rural (% pop. rural)` =   Percentual_pop_rural,
+          `Distância da capital` =      distancia_capital, 
+          `Região metropolitana` = metropolitana,
+          `Emprego privado (% empregados)` = Percentual_emprego,
+          `Renda (PIB per capita)` = PIB_per_capita, 
+          `Máquina pública (% func. pub. discricionários)` = Maquina_publica,
+          `Autonomia financeira (% de transferências governamentais)` = Dependencia_financeira_municipal,
+          `Heterogeneidade econômica (fracionalização do PIB)` = Fracionalizacao_PIB,
+           `Heterogeneidade cultural (fracionalização religiosa)` = Fracionalizacao_religiosa,
+          `Heterogeneidade social (GINI)` = GINI)
+    
+
+
+   datasummary(  `Educação (% pop. ensino médio)` +
+                 `Genero (% mulheres)` + 
+                 `Idade (% idosos)` +
+                 `Religião (% pop. sem religião)` +
+                 `Tamanho (Log número de eleitores)` +
+                 `Densidade (Densidade demográfica)` +
+                 `População rural (% pop. rural)` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado (% empregados)` +
+                 `Renda (PIB per capita)` +
+                 `Máquina pública (% func. pub. discricionários)`+
+                 `Autonomia financeira (% de transferências governamentais)` +
+                 `Heterogeneidade econômica (fracionalização do PIB)`+ 
+                 `Heterogeneidade cultural (fracionalização religiosa)`+
+                   
+                 `Heterogeneidade social (GINI)` ~ Mean + SD + Median + Min + Max + Histogram, 
+              
+              data = tabela_bruno,
+      output = "kableExtra") %>% 
+  column_spec(2, bold = T, border_right = T) %>% 
+   pack_rows(
+     index = c("Atributos individuais" = 4, "Ecológicas" = 9, "Heterogeneidade" = 3)
+   )
+
+
+
+```
+
+
+
+
+
+
+
+# Quadro 6: Modelos hierárquicos (multiníveis) com interceptos aleatórios (Random Intercept Model) 
+
+
+
+```{r, echo = FALSE, warning=FALSE, fig.height=18, fig.width=15, message=FALSE}
+
+
+bancos_modelos_bruno <- base_participacao_artigo %>% 
+  rename(`Educação` = Educacao,
+          `Gênero` = Percentual_mulheres,
+          `Idade` = Percentual_idosos, 
+          `Religião (% sem religião)` =  Percentual_sem_religiao,
+          `Densidade` = Densidade_demografica,
+          `População rural` =   Percentual_pop_rural,
+          `Distância da capital` =      distancia_capital, 
+          `Região metropolitana` = metropolitana,
+          `Emprego privado` = Percentual_emprego,
+          `Renda` = PIB_per_capita, 
+          `Máquina pública` = Maquina_publica,
+          `Autonomia financeira` = Dependencia_financeira_municipal,
+          `Heterogeneidade econômica` = Fracionalizacao_PIB,
+           `Heterogeneidade cultural` = Fracionalizacao_religiosa,
+          `Heterogeneidade social` = GINI,
+        
+          `Presidente 2010` =  p_validos_aptos_1_2010_1,
+          `Governador 2010` =  p_validos_aptos_1_2010_3,
+          `Senador 2010` =     p_validos_aptos_1_2010_5,
+          `Dep Federal 2010` = p_validos_aptos_1_2010_6,
+          `Dep Estadual 2010` = p_validos_aptos_1_2010_7,
+          `Prefeito 2012` =    p_validos_aptos_1_2012_11,
+          `Vereador 2012` =    p_validos_aptos_1_2012_13)
+    
+
+
+
+modelo_presidente_llm_2 <- lmer(`Presidente 2010` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+modelo_governador_llm_2 <- lmer(`Governador 2010` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+
+
+
+modelo_senador_llm_2 <- lmer(`Senador 2010` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+
+
+modelo_dep_federal_llm_2 <- lmer(`Dep Federal 2010` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+
+modelo_dep_estadual_llm_2 <- lmer(`Dep Estadual 2010` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+modelo_prefeito_llm_2 <- lmer(`Prefeito 2012` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+modelo_vereador_llm_2 <- lmer(`Vereador 2012` ~
+                 `Educação` +
+                 `Gênero` + 
+                 `Idade` +
+                 `Religião (% sem religião)` +
+                  log(Eleitores) +
+                 `Densidade` +
+                 `População rural` +
+                 `Distância da capital` +
+                 `Região metropolitana` +
+                 `Emprego privado` +
+                 `Renda` +
+                 `Máquina pública`+
+                 `Autonomia financeira` +
+                 `Heterogeneidade econômica`+ 
+                 `Heterogeneidade cultural`+
+                   
+                 `Heterogeneidade social` +
+             
+                 (1| uf),
+              
+           
+              data = bancos_modelos_bruno)
+
+
+
+
+
+```
+
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+tab_model(modelo_presidente_llm_2 ,modelo_governador_llm_2,
+          modelo_senador_llm_2, modelo_dep_federal_llm_2,
+          modelo_dep_estadual_llm_2, modelo_prefeito_llm_2,
+          modelo_vereador_llm_2, show.ci = FALSE, show.std = TRUE, show.est = FALSE, show.p = TRUE,
+          p.style = c( "numeric_stars"),
+dv.labels = c("Presidente", "Governador", "Senador", "Dep. Federal", "Dep. Estadual", "Prefeito", "Vereador")
+)
+
+```
+
+
+
+
+
+
